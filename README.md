@@ -2,6 +2,14 @@
 
 An AI-powered personal project coach built on [ElizaOS](https://elizaos.com) and deployed on [Nosana](https://nosana.com)'s decentralized GPU network. Built for the Nosana x ElizaOS Agent Challenge.
 
+## Why Alexi Exists
+
+I'm on a journey to level up my expertise in AI and automation. Every week there's a new project to build, a new framework to learn, a new challenge to enter. The problem isn't ideas; it's execution. I'd start a project, get lost halfway through, skip the fundamentals, or lose track of what I was supposed to do next.
+
+What I needed was a structured plan that balances learning with building. Not just a task list, but something that finds the right tutorials first, sequences them before the hands-on work, blocks out realistic time slots, and keeps me accountable throughout the week. A coach that understands technical projects and treats learning as part of the build process, not separate from it.
+
+That's Alexi. It was originally a Python Telegram bot (v1), but the Nosana x ElizaOS challenge gave me the opportunity to rebuild it as a proper AI agent with web search, multi-platform support, and decentralized infrastructure. The result is a tool I actually use every week to plan and ship my projects.
+
 ## What Alexi Does
 
 Alexi helps you plan, schedule, and execute weekly technical projects. Instead of vague to-do lists, Alexi:
