@@ -1363,36 +1363,191 @@ const weeklySummaryAction: Action = {
 
 // ─── SERVICE: Telegram Reminders ────────────────────────────────────────────
 
-async function sendTelegramMessage(text: string): Promise<boolean> {
+function getTelegramConfig() {
   const token = process.env.TELEGRAM_BOT_TOKEN || "";
   const chatId = process.env.TELEGRAM_CHAT_ID || "";
-  if (!token || !chatId) {
-    console.log("[REMINDER] Telegram not configured (missing BOT_TOKEN or CHAT_ID)");
+  if (!token || !chatId) return null;
+  return { token, chatId };
+}
+
+async function sendTelegramMessage(text: string, replyMarkup?: unknown): Promise<boolean> {
+  const config = getTelegramConfig();
+  if (!config) {
+    console.log("[TELEGRAM] Not configured (missing BOT_TOKEN or CHAT_ID)");
     return false;
   }
   try {
+    const body: Record<string, unknown> = {
+      chat_id: config.chatId,
+      text,
+      parse_mode: "Markdown",
+    };
+    if (replyMarkup) body.reply_markup = replyMarkup;
     const res = await fetch(
-      `https://api.telegram.org/bot${token}/sendMessage`,
+      `https://api.telegram.org/bot${config.token}/sendMessage`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text,
-          parse_mode: "Markdown",
-        }),
+        body: JSON.stringify(body),
       }
     );
     if (!res.ok) {
-      console.error("[REMINDER] Telegram send failed:", await res.text());
+      console.error("[TELEGRAM] Send failed:", await res.text());
       return false;
     }
-    console.log("[REMINDER] Telegram message sent successfully");
     return true;
   } catch (e) {
-    console.error("[REMINDER] Telegram send error:", e);
+    console.error("[TELEGRAM] Send error:", e);
     return false;
   }
+}
+
+function buildTaskButtons(todaysTasks: Task[]): unknown | null {
+  const pending = todaysTasks.filter(t => t.status === "pending");
+  if (pending.length === 0) return null;
+
+  const rows: unknown[] = [];
+  for (const t of pending) {
+    // Task name row (non-clickable label using a no-op callback)
+    rows.push([{ text: `📋 ${t.startTime} — ${t.title.slice(0, 35)}`, callback_data: `noop:${t.id}` }]);
+    // Action buttons row
+    rows.push([
+      { text: "✅ Done", callback_data: `done:${t.id}` },
+      { text: "⏭️ Skip", callback_data: `skip:${t.id}` },
+      { text: "🔄 Later", callback_data: `carry:${t.id}` },
+    ]);
+  }
+
+  return { inline_keyboard: rows };
+}
+
+async function answerCallbackQuery(token: string, callbackId: string, text: string): Promise<void> {
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ callback_query_id: callbackId, text, show_alert: false }),
+    });
+  } catch { /* ignore */ }
+}
+
+async function handleCallbackQuery(
+  token: string,
+  callbackId: string,
+  data: string,
+  chatId: string
+): Promise<void> {
+  const [action, taskId] = data.split(":");
+  if (!action || !taskId) return;
+
+  const taskIdx = tasks.findIndex(t => t.id === taskId);
+  if (taskIdx === -1) {
+    await answerCallbackQuery(token, callbackId, "Task not found");
+    return;
+  }
+
+  const task = tasks[taskIdx];
+  const notion = getNotionConfig();
+
+  if (action === "done") {
+    tasks[taskIdx].status = "done";
+    tasks[taskIdx].completedAt = new Date().toISOString();
+    await answerCallbackQuery(token, callbackId, `Done: ${task.title.slice(0, 30)}`);
+
+    // Update Notion
+    if (notion && task.notionPageId) {
+      await notionUpdatePage(notion.apiKey, task.notionPageId, {
+        Status: { select: { name: "Done" } },
+      });
+    }
+
+    const todaysTasks = getTodaysTasks();
+    const completed = todaysTasks.filter(t => t.status === "done").length;
+    const total = todaysTasks.length + 1; // +1 because we just changed it
+    const nextTask = todaysTasks.find(t => t.status === "pending");
+    let msg = `✅ *${task.title}* — done!\n\nProgress: ${completed}/${total}`;
+    if (nextTask) msg += `\nNext: *${nextTask.title}* at ${nextTask.startTime}`;
+
+    const buttons = buildTaskButtons(todaysTasks);
+    await sendTelegramMessage(msg, buttons);
+
+  } else if (action === "skip") {
+    tasks[taskIdx].status = "skipped";
+    await answerCallbackQuery(token, callbackId, `Skipped: ${task.title.slice(0, 30)}`);
+
+    if (notion && task.notionPageId) {
+      await notionUpdatePage(notion.apiKey, task.notionPageId, {
+        Status: { select: { name: "Skipped" } },
+      });
+    }
+
+    const todaysTasks = getTodaysTasks();
+    await sendTelegramMessage(`⏭️ Skipped: *${task.title}*`, buildTaskButtons(todaysTasks));
+
+  } else if (action === "carry") {
+    tasks[taskIdx].status = "carried_over";
+    await answerCallbackQuery(token, callbackId, `Carrying over: ${task.title.slice(0, 30)}`);
+
+    if (notion && task.notionPageId) {
+      await notionUpdatePage(notion.apiKey, task.notionPageId, {
+        Status: { select: { name: "Carried Over" } },
+      });
+    }
+
+    // Create carry-over task for next work day
+    const today = getCurrentDateWAT();
+    const nextDay = new Date(today);
+    nextDay.setDate(nextDay.getDate() + 1);
+    while (nextDay.getDay() === 0 || nextDay.getDay() === 6) {
+      nextDay.setDate(nextDay.getDate() + 1);
+    }
+    tasks.push({
+      ...task,
+      id: generateId(),
+      scheduledDate: nextDay.toISOString().split("T")[0],
+      status: "pending",
+      notionPageId: null,
+      createdAt: new Date().toISOString(),
+      completedAt: null,
+    });
+
+    const todaysTasks = getTodaysTasks();
+    await sendTelegramMessage(`🔄 Carrying over: *${task.title}* to next work day`, buildTaskButtons(todaysTasks));
+  }
+}
+
+// Poll for Telegram button presses
+let callbackPollInterval: ReturnType<typeof setInterval> | null = null;
+let lastUpdateId = 0;
+
+function startCallbackPoller(): void {
+  const config = getTelegramConfig();
+  if (!config) return;
+
+  console.log("[TELEGRAM] Starting callback query poller");
+
+  callbackPollInterval = setInterval(async () => {
+    try {
+      const res = await fetch(
+        `https://api.telegram.org/bot${config.token}/getUpdates?offset=${lastUpdateId + 1}&timeout=1&allowed_updates=["callback_query"]`,
+      );
+      const data = await res.json() as any;
+      if (!data.ok || !data.result?.length) return;
+
+      for (const update of data.result) {
+        lastUpdateId = update.update_id;
+        if (update.callback_query) {
+          const cb = update.callback_query;
+          await handleCallbackQuery(
+            config.token,
+            cb.id,
+            cb.data || "",
+            String(cb.message?.chat?.id || config.chatId)
+          );
+        }
+      }
+    } catch { /* ignore polling errors */ }
+  }, 3000); // Poll every 3 seconds
 }
 
 function composeMorningBriefing(): string {
@@ -1513,11 +1668,12 @@ function startReminderService(): void {
     const isWeekday = !["Saturday", "Sunday"].includes(dayOfWeek);
     const isSaturday = dayOfWeek === "Saturday";
 
-    // Morning briefing — 12:00 PM WAT, Mon-Fri
+    // Morning briefing — 12:00 PM WAT, Mon-Fri (with task buttons)
     if (isWeekday && currentTime >= "12:00" && currentTime < "12:02" && !firedReminders.has(reminderKey("morning"))) {
       firedReminders.add(reminderKey("morning"));
       const msg = composeMorningBriefing();
-      if (msg) await sendTelegramMessage(msg);
+      const buttons = buildTaskButtons(getTodaysTasks());
+      if (msg) await sendTelegramMessage(msg, buttons);
     }
 
     // Midday check-in — 3:30 PM WAT, Mon-Fri
@@ -1551,7 +1707,8 @@ export const alexiPlugin: Plugin = {
     "Personal project coach — plans projects, schedules tasks, tracks progress, and provides daily/weekly reviews",
   init: async () => {
     startReminderService();
-    console.log("[ALEXI] Plugin initialized with reminder service");
+    startCallbackPoller();
+    console.log("[ALEXI] Plugin initialized with reminders + button handler");
   },
   actions: [
     planProjectAction,
