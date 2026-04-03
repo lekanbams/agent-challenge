@@ -413,7 +413,7 @@ const planProjectAction: Action = {
 
     // Extract project title from full conversation (not just last message)
     const baseUrl = process.env.OPENAI_BASE_URL || "";
-    const model = process.env.OPENAI_LARGE_MODEL || "Qwen3.5-27B-AWQ-4bit";
+    const model = process.env.OPENAI_LARGE_MODEL || "Qwen/Qwen3.5-4B";
     let projectName = lastMessageText.slice(0, 80);
     try {
       const titleRes = await fetch(`${baseUrl}/chat/completions`, {
@@ -512,7 +512,7 @@ Rules:
     let planText = "";
     try {
       const baseUrl = process.env.OPENAI_BASE_URL || "https://6vq2bcqphcansrs9b88ztxfs88oqy7etah2ugudytv2x.node.k8s.prd.nos.ci/v1";
-      const model = process.env.OPENAI_LARGE_MODEL || "Qwen3.5-27B-AWQ-4bit";
+      const model = process.env.OPENAI_LARGE_MODEL || "Qwen/Qwen3.5-4B";
       const llmRes = await fetch(`${baseUrl}/chat/completions`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.OPENAI_API_KEY || "nosana"}` },

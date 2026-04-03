@@ -29,7 +29,7 @@ Alexi: "13 tasks synced to Notion Calendar."
 ┌─────────────────────────────────────────────────┐
 │              Nosana Decentralized GPU            │
 │  ┌───────────────────────────────────────────┐   │
-│  │  Qwen3.5-27B-AWQ-4bit (LLM Inference)    │   │
+│  │  Qwen/Qwen3.5-4B (LLM Inference)    │   │
 │  └──────────────────┬────────────────────────┘   │
 │                     │                            │
 │  ┌──────────────────▼────────────────────────┐   │
@@ -56,7 +56,7 @@ Alexi: "13 tasks synced to Notion Calendar."
 ## Tech Stack
 
 - **Framework:** ElizaOS v1.7.2 (TypeScript)
-- **LLM:** Qwen3.5-27B-AWQ-4bit via Nosana inference endpoint
+- **LLM:** Qwen/Qwen3.5-4B via Nosana inference endpoint
 - **Search:** Tavily API for real-time resource discovery
 - **Chat:** ElizaOS built-in web UI + Telegram bot
 - **Storage:** Notion API for task/calendar management, SQLite for local state
@@ -104,8 +104,8 @@ Open http://localhost:3000
 |----------|---------|
 | `OPENAI_API_KEY` | Set to `nosana` for Nosana endpoint |
 | `OPENAI_BASE_URL` | Nosana Qwen3.5 inference URL |
-| `OPENAI_SMALL_MODEL` | `Qwen3.5-27B-AWQ-4bit` |
-| `OPENAI_LARGE_MODEL` | `Qwen3.5-27B-AWQ-4bit` |
+| `OPENAI_SMALL_MODEL` | `Qwen/Qwen3.5-4B` |
+| `OPENAI_LARGE_MODEL` | `Qwen/Qwen3.5-4B` |
 | `TAVILY_API_KEY` | Web search for resource discovery |
 | `TELEGRAM_BOT_TOKEN` | Telegram bot integration |
 | `NOTION_API_KEY` | Notion integration for task sync |
@@ -132,7 +132,7 @@ nosana job post \
 
 Alexi uses Nosana at multiple levels:
 
-- **LLM Inference:** All AI reasoning runs through Nosana's hosted Qwen3.5-27B endpoint
+- **LLM Inference:** All AI reasoning runs through Nosana's hosted Qwen3.5 endpoint
 - **Container Deployment:** The agent runs as a Docker container on Nosana's decentralized GPU network
 - **Decentralized Architecture:** No centralized cloud dependency — compute is distributed across Nosana nodes
 
