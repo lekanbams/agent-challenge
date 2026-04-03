@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "dist/index.js",
   "scripts": {
+    "build": "tsc",
     "start": "elizaos start --character ./characters/agent.character.json",
     "dev": "elizaos dev --character ./characters/agent.character.json"
   },
@@ -11,7 +13,9 @@
     "@elizaos/core": "^1.0.0",
     "@elizaos/plugin-anthropic": "^1.5.12",
     "@elizaos/plugin-bootstrap": "^1.0.0",
-    "@elizaos/plugin-openai": "^1.0.0"
+    "@elizaos/plugin-openai": "^1.0.0",
+    "@elizaos/plugin-telegram": "^1.6.4",
+    "@elizaos/plugin-web-search": "^1.0.1"
   },
   "devDependencies": {
     "@elizaos/cli": "^1.0.0",

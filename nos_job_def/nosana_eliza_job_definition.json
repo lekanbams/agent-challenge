@@ -1,16 +1,23 @@
 {
   "ops": [
     {
-      "id": "agent",
+      "id": "alexi-agent",
       "args": {
-        "image": "yourusername/nosana-eliza-agent:latest",
+        "image": "lekanbams/alexi-agent:latest",
         "expose": 3000,
         "env": {
           "OPENAI_API_KEY": "nosana",
-          "OPENAI_API_URL": "TODO: replace with actual Nosana Qwen3.5 endpoint URL",
-          "MODEL_NAME": "qwen3.5-27b",
+          "OPENAI_BASE_URL": "https://4ksj3tve5bazqwkuyqdhwdpcar4yutcuxphwhckrdxmu.node.k8s.prd.nos.ci/v1",
+          "OPENAI_SMALL_MODEL": "Qwen/Qwen3.5-4B",
+          "OPENAI_LARGE_MODEL": "Qwen/Qwen3.5-4B",
+          "OPENAI_EMBEDDING_URL": "https://4yiccatpyxx773jtewo5ccwhw1s2hezq5pehndb6fcfq.node.k8s.prd.nos.ci/v1",
+          "OPENAI_EMBEDDING_API_KEY": "nosana",
+          "OPENAI_EMBEDDING_MODEL": "Qwen3-Embedding-0.6B",
+          "OPENAI_EMBEDDING_DIMENSIONS": "1024",
           "SERVER_PORT": "3000",
-          "NODE_ENV": "production"
+          "NODE_ENV": "production",
+          "TAVILY_API_KEY": "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",
+          "TELEGRAM_BOT_TOKEN": "8745040741:AAFWrj4DAJ93UYOwN5oO3dmSG1u9pSGgzxQ"
         }
       },
       "execution": {

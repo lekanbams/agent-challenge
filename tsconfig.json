@@ -8,7 +8,11 @@
     "rootDir": "src",
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "declaration": true
+    "declaration": true,
+    "baseUrl": ".",
+    "paths": {
+      "@elizaos/core": ["./node_modules/@elizaos/core"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
