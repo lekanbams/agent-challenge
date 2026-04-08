@@ -413,7 +413,7 @@ const planProjectAction: Action = {
 
     // Extract project title from full conversation (not just last message)
     const baseUrl = process.env.OPENAI_BASE_URL || "";
-    const model = process.env.OPENAI_LARGE_MODEL || "Qwen/Qwen3.5-4B";
+    const model = process.env.OPENAI_LARGE_MODEL || "Qwen3.5-9B-FP8";
     let projectName = lastMessageText.slice(0, 80);
     try {
       const titleRes = await fetch(`${baseUrl}/chat/completions`, {
@@ -512,7 +512,7 @@ Rules:
     let planText = "";
     try {
       const baseUrl = process.env.OPENAI_BASE_URL || "https://6vq2bcqphcansrs9b88ztxfs88oqy7etah2ugudytv2x.node.k8s.prd.nos.ci/v1";
-      const model = process.env.OPENAI_LARGE_MODEL || "Qwen/Qwen3.5-4B";
+      const model = process.env.OPENAI_LARGE_MODEL || "Qwen3.5-9B-FP8";
       const llmRes = await fetch(`${baseUrl}/chat/completions`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.OPENAI_API_KEY || "nosana"}` },
@@ -1546,7 +1546,7 @@ function startCallbackPoller(): void {
           );
         }
       }
-    } catch { /* ignore polling errors */ }
+    } catch (e) { console.error("[TELEGRAM] Poll error:", e); }
   }, 3000); // Poll every 3 seconds
 }
 
@@ -1699,6 +1699,181 @@ function startReminderService(): void {
   }, 60000); // Check every 60 seconds
 }
 
+// ─── Telegram Handler (replaces ElizaOS plugin to avoid getUpdates conflict) ──
+
+function buildMainMenu(): unknown {
+  return {
+    inline_keyboard: [
+      [{ text: "📋 View Today's Tasks", callback_data: "menu:today" }],
+      [{ text: "📊 Daily Report", callback_data: "menu:report" }],
+      [{ text: "📈 Weekly Summary", callback_data: "menu:weekly" }],
+    ],
+  };
+}
+
+async function sendStartupMessage(): Promise<void> {
+  const config = getTelegramConfig();
+  if (!config) return;
+
+  await sendTelegramMessage(
+    `👋 *Alexi is online!*\n\nYour personal project coach is ready.\n\n` +
+    `Use the buttons below or type a message to chat.`,
+    buildMainMenu()
+  );
+}
+
+async function handleTelegramMessage(
+  _token: string,
+  _chatId: string,
+  text: string
+): Promise<void> {
+  // Quick commands that don't need LLM
+  const lower = text.toLowerCase();
+
+  if (lower === "/start" || lower === "/menu") {
+    await sendTelegramMessage(
+      `👋 *Alexi is online!*\n\nUse the buttons or type a message.`,
+      buildMainMenu()
+    );
+    return;
+  }
+
+  if (lower === "/tasks" || lower.includes("what's on today") || lower.includes("whats on")) {
+    const todaysTasks = getTodaysTasks();
+    if (todaysTasks.length === 0) {
+      await sendTelegramMessage("📋 No tasks scheduled for today.\n\nPlan a project on the web UI first!", buildMainMenu());
+      return;
+    }
+    const completed = todaysTasks.filter(t => t.status === "done").length;
+    let msg = `📋 *Today's Tasks* (${completed}/${todaysTasks.length} done)\n\n`;
+    for (const t of todaysTasks) {
+      const icon = t.status === "done" ? "✅" : t.status === "skipped" ? "⏭️" : "⬜";
+      msg += `${icon} ${t.startTime}-${t.endTime} | ${t.title}\n`;
+    }
+    const buttons = buildTaskButtons(todaysTasks);
+    await sendTelegramMessage(msg, buttons || buildMainMenu());
+    return;
+  }
+
+  // For anything else, forward to the Nosana LLM
+  try {
+    const baseUrl = process.env.OPENAI_BASE_URL || "";
+    const model = process.env.OPENAI_LARGE_MODEL || "Qwen3.5-9B-FP8";
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.OPENAI_API_KEY || "nosana"}` },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: "You are Alexi, a personal project coach. Be concise and direct. Use emojis where appropriate. Your user works 12PM-7PM WAT, Mon-Fri." },
+          { role: "user", content: text },
+        ],
+        max_tokens: 500,
+        temperature: 0.7,
+        chat_template_kwargs: { enable_thinking: false },
+      }),
+    });
+    const data = await res.json() as any;
+    const reply = data?.choices?.[0]?.message?.content || "Sorry, I couldn't process that. Try again!";
+    await sendTelegramMessage(reply, buildMainMenu());
+  } catch {
+    await sendTelegramMessage("⚠️ Couldn't reach the LLM right now. Try again in a moment.", buildMainMenu());
+  }
+}
+
+async function handleMenuCallback(
+  token: string,
+  callbackId: string,
+  data: string,
+  chatId: string
+): Promise<void> {
+  if (data === "menu:today") {
+    await answerCallbackQuery(token, callbackId, "Loading tasks...");
+    const todaysTasks = getTodaysTasks();
+    if (todaysTasks.length === 0) {
+      await sendTelegramMessage("📋 No tasks scheduled today.\n\nPlan a project on the web UI first!", buildMainMenu());
+      return;
+    }
+    const completed = todaysTasks.filter(t => t.status === "done").length;
+    let msg = `📋 *Today's Tasks* (${completed}/${todaysTasks.length} done)\n\n`;
+    for (const t of todaysTasks) {
+      const icon = t.status === "done" ? "✅" : t.status === "skipped" ? "⏭️" : "⬜";
+      msg += `${icon} ${t.startTime}-${t.endTime} | ${t.title}\n`;
+    }
+    const buttons = buildTaskButtons(todaysTasks);
+    await sendTelegramMessage(msg, buttons || buildMainMenu());
+  } else if (data === "menu:report") {
+    await answerCallbackQuery(token, callbackId, "Generating report...");
+    const msg = composeEODWrapup();
+    await sendTelegramMessage(msg || "📊 No tasks to report on today.", buildMainMenu());
+  } else if (data === "menu:weekly") {
+    await answerCallbackQuery(token, callbackId, "Loading summary...");
+    const msg = composeWeeklyReview();
+    await sendTelegramMessage(msg || "📈 No tasks this week yet.", buildMainMenu());
+  } else if (data.startsWith("done:") || data.startsWith("skip:") || data.startsWith("carry:")) {
+    await handleCallbackQuery(token, callbackId, data, chatId);
+  } else if (data.startsWith("noop:")) {
+    await answerCallbackQuery(token, callbackId, "");
+  }
+}
+
+let telegramPollInterval: ReturnType<typeof setInterval> | null = null;
+let telegramLastUpdateId = 0;
+
+function startTelegramHandler(): void {
+  const config = getTelegramConfig();
+  if (!config) {
+    console.log("[TELEGRAM] Not configured, skipping handler");
+    return;
+  }
+
+  console.log("[TELEGRAM] Starting custom handler with buttons");
+
+  // Send startup message after a short delay
+  setTimeout(() => sendStartupMessage(), 3000);
+
+  // Poll for messages and button presses
+  telegramPollInterval = setInterval(async () => {
+    try {
+      const res = await fetch(
+        `https://api.telegram.org/bot${config.token}/getUpdates?offset=${telegramLastUpdateId + 1}&timeout=1`
+      );
+      const data = await res.json() as any;
+      if (!data.ok || !data.result?.length) return;
+
+      console.log(`[TELEGRAM] Got ${data.result.length} updates`);
+
+      for (const update of data.result) {
+        telegramLastUpdateId = update.update_id;
+
+        // Handle button presses
+        if (update.callback_query) {
+          const cb = update.callback_query;
+          console.log(`[TELEGRAM] Button pressed: ${cb.data}`);
+          await handleMenuCallback(
+            config.token,
+            cb.id,
+            cb.data || "",
+            String(cb.message?.chat?.id || config.chatId)
+          );
+        }
+
+        // Handle text messages
+        if (update.message?.text) {
+          console.log(`[TELEGRAM] Message from ${update.message.chat.id}: ${update.message.text.slice(0, 50)}`);
+        }
+        if (update.message?.text && String(update.message.chat.id) === config.chatId) {
+          await handleTelegramMessage(
+            config.token,
+            config.chatId,
+            update.message.text
+          );
+        }
+      }
+    } catch (e) { console.error("[TELEGRAM] Poll error:", e); }
+  }, 2000);
+}
+
 // ─── PLUGIN EXPORT ──────────────────────────────────────────────────────────
 
 export const alexiPlugin: Plugin = {
@@ -1707,8 +1882,8 @@ export const alexiPlugin: Plugin = {
     "Personal project coach — plans projects, schedules tasks, tracks progress, and provides daily/weekly reviews",
   init: async () => {
     startReminderService();
-    startCallbackPoller();
-    console.log("[ALEXI] Plugin initialized with reminders + button handler");
+    startTelegramHandler();
+    console.log("[ALEXI] Plugin initialized with reminders + Telegram handler");
   },
   actions: [
     planProjectAction,
