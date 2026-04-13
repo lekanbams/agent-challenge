@@ -7,9 +7,9 @@
         "expose": 3000,
         "env": {
           "OPENAI_API_KEY": "nosana",
-          "OPENAI_BASE_URL": "https://4ksj3tve5bazqwkuyqdhwdpcar4yutcuxphwhckrdxmu.node.k8s.prd.nos.ci/v1",
-          "OPENAI_SMALL_MODEL": "Qwen/Qwen3.5-4B",
-          "OPENAI_LARGE_MODEL": "Qwen/Qwen3.5-4B",
+          "OPENAI_BASE_URL": "https://5i8frj7ann99bbw9gzpprvzj2esugg39hxbb4unypskq.node.k8s.prd.nos.ci/v1",
+          "OPENAI_SMALL_MODEL": "Qwen3.5-9B-FP8",
+          "OPENAI_LARGE_MODEL": "Qwen3.5-9B-FP8",
           "OPENAI_EMBEDDING_URL": "https://4yiccatpyxx773jtewo5ccwhw1s2hezq5pehndb6fcfq.node.k8s.prd.nos.ci/v1",
           "OPENAI_EMBEDDING_API_KEY": "nosana",
           "OPENAI_EMBEDDING_MODEL": "Qwen3-Embedding-0.6B",

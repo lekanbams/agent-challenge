@@ -1,10 +1,6 @@
 import { AgentServer, loadCharacter } from "@elizaos/server";
-import { readFileSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import dotenv from "dotenv";
-
-dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const characterPath = path.join(__dirname, "characters", "agent.character.json");
@@ -12,22 +8,22 @@ const characterPath = path.join(__dirname, "characters", "agent.character.json")
 async function main() {
   console.log("Loading Alexi character...");
   const character = await loadCharacter(characterPath);
-  console.log(`Character loaded: ${character.name} (${character.id})`);
+  console.log(`Character loaded: ${character.name}`);
 
   const server = new AgentServer();
-  const port = process.env.SERVER_PORT || 3000;
+  const port = Number(process.env.SERVER_PORT || 3000);
 
-  // Start the HTTP server
-  await server.start({ port: Number(port) });
+  await server.start({ port });
   console.log(`Server listening on port ${port}`);
 
-  // addAgents expects JSON strings
-  const characterJson = readFileSync(characterPath, "utf-8");
-  await server.elizaOS.addAgents([characterJson]);
-  await server.elizaOS.startAgents([character.id]);
+  // addAgents expects { character, plugins, settings } objects
+  // autoStart: true will call startAgents automatically
+  await server.elizaOS.addAgents(
+    [{ character, plugins: character.plugins || [], settings: {} }],
+    { autoStart: true }
+  );
   console.log(`Agent started: ${character.name}`);
-
-  console.log(`\nAlexi is running at http://localhost:${port}`);
+  console.log(`Alexi is running at http://localhost:${port}`);
 }
 
 main().catch((err) => {

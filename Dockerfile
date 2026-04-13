@@ -14,12 +14,16 @@ ENV DO_NOT_TRACK=1
 
 WORKDIR /app
 
-# Install pnpm
+# Install pnpm and bun
 RUN npm install -g pnpm
+RUN npm install -g bun
 
 # Copy package manifest and lockfile, install dependencies
 COPY package.json .npmrc ./
 RUN pnpm install
+
+# Run Bun postinstall (required by @elizaos/cli)
+RUN cd node_modules/bun && node install.js || true
 
 # Apply patches for Qwen3.5 compatibility and web-search display
 COPY patches/ /tmp/patches/
@@ -45,4 +49,4 @@ EXPOSE 3000
 ENV NODE_ENV=production
 ENV SERVER_PORT=3000
 
-CMD ["pnpm", "start"]
+CMD ["bun", "node_modules/@elizaos/cli/dist/index.js", "start", "--character", "./characters/agent.character.json"]

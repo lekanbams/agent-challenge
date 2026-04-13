@@ -4,6 +4,7 @@
   "plugins": [
     "@elizaos/plugin-bootstrap",
     "@elizaos/plugin-openai",
+    "@elizaos/plugin-sql",
     "nosana-eliza-agent"
   ],
   "settings": {

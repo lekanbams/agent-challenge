@@ -1383,7 +1383,7 @@ async function sendTelegramMessage(text: string, replyMarkup?: unknown): Promise
       parse_mode: "Markdown",
     };
     if (replyMarkup) body.reply_markup = replyMarkup;
-    const res = await fetch(
+    let res = await fetch(
       `https://api.telegram.org/bot${config.token}/sendMessage`,
       {
         method: "POST",
@@ -1391,9 +1391,29 @@ async function sendTelegramMessage(text: string, replyMarkup?: unknown): Promise
         body: JSON.stringify(body),
       }
     );
+    // Retry without markdown if parsing fails
     if (!res.ok) {
-      console.error("[TELEGRAM] Send failed:", await res.text());
-      return false;
+      const errText = await res.text();
+      if (errText.includes("can't parse entities")) {
+        console.log("[TELEGRAM] Markdown parse failed, retrying as plain text");
+        body.parse_mode = undefined;
+        delete body.parse_mode;
+        res = await fetch(
+          `https://api.telegram.org/bot${config.token}/sendMessage`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          }
+        );
+        if (!res.ok) {
+          console.error("[TELEGRAM] Plain text send also failed:", await res.text());
+          return false;
+        }
+      } else {
+        console.error("[TELEGRAM] Send failed:", errText);
+        return false;
+      }
     }
     return true;
   } catch (e) {
@@ -1406,19 +1426,18 @@ function buildTaskButtons(todaysTasks: Task[]): unknown | null {
   const pending = todaysTasks.filter(t => t.status === "pending");
   if (pending.length === 0) return null;
 
-  const rows: unknown[] = [];
-  for (const t of pending) {
-    // Task name row (non-clickable label using a no-op callback)
-    rows.push([{ text: `📋 ${t.startTime} — ${t.title.slice(0, 35)}`, callback_data: `noop:${t.id}` }]);
-    // Action buttons row
-    rows.push([
-      { text: "✅ Done", callback_data: `done:${t.id}` },
-      { text: "⏭️ Skip", callback_data: `skip:${t.id}` },
-      { text: "🔄 Later", callback_data: `carry:${t.id}` },
-    ]);
-  }
+  // Show task list as text, with reply keyboard for actions
+  return buildMainMenu();
+}
 
-  return { inline_keyboard: rows };
+function formatTaskListWithNumbers(todaysTasks: Task[]): string {
+  const pending = todaysTasks.filter(t => t.status === "pending");
+  if (pending.length === 0) return "";
+  let msg = "\nTo mark a task done, type: *done 1*, *skip 2*, or *later 3*\n\n";
+  pending.forEach((t, i) => {
+    msg += `${i + 1}. ${t.startTime}-${t.endTime} | ${t.title}\n`;
+  });
+  return msg;
 }
 
 async function answerCallbackQuery(token: string, callbackId: string, text: string): Promise<void> {
@@ -1703,11 +1722,12 @@ function startReminderService(): void {
 
 function buildMainMenu(): unknown {
   return {
-    inline_keyboard: [
-      [{ text: "📋 View Today's Tasks", callback_data: "menu:today" }],
-      [{ text: "📊 Daily Report", callback_data: "menu:report" }],
-      [{ text: "📈 Weekly Summary", callback_data: "menu:weekly" }],
+    keyboard: [
+      [{ text: "📋 View Today's Tasks" }, { text: "📊 Daily Report" }],
+      [{ text: "📈 Weekly Summary" }, { text: "📝 Plan Project" }],
     ],
+    resize_keyboard: true,
+    one_time_keyboard: false,
   };
 }
 
@@ -1738,7 +1758,7 @@ async function handleTelegramMessage(
     return;
   }
 
-  if (lower === "/tasks" || lower.includes("what's on today") || lower.includes("whats on")) {
+  if (lower === "/tasks" || lower.includes("what's on today") || lower.includes("whats on") || lower.includes("view today's tasks")) {
     const todaysTasks = getTodaysTasks();
     if (todaysTasks.length === 0) {
       await sendTelegramMessage("📋 No tasks scheduled for today.\n\nPlan a project on the web UI first!", buildMainMenu());
@@ -1750,8 +1770,62 @@ async function handleTelegramMessage(
       const icon = t.status === "done" ? "✅" : t.status === "skipped" ? "⏭️" : "⬜";
       msg += `${icon} ${t.startTime}-${t.endTime} | ${t.title}\n`;
     }
-    const buttons = buildTaskButtons(todaysTasks);
-    await sendTelegramMessage(msg, buttons || buildMainMenu());
+    msg += formatTaskListWithNumbers(todaysTasks);
+    await sendTelegramMessage(msg, buildMainMenu());
+    return;
+  }
+
+  // Handle task actions: "done 1", "skip 2", "later 3"
+  const taskActionMatch = lower.match(/^(done|skip|later)\s+(\d+)$/);
+  if (taskActionMatch) {
+    const action = taskActionMatch[1];
+    const num = parseInt(taskActionMatch[2]) - 1;
+    const pending = getTodaysTasks().filter(t => t.status === "pending");
+    if (num >= 0 && num < pending.length) {
+      const task = pending[num];
+      const taskIdx = tasks.findIndex(t => t.id === task.id);
+      const notion = getNotionConfig();
+
+      if (action === "done" && taskIdx !== -1) {
+        tasks[taskIdx].status = "done";
+        tasks[taskIdx].completedAt = new Date().toISOString();
+        if (notion && task.notionPageId) {
+          await notionUpdatePage(notion.apiKey, task.notionPageId, { Status: { select: { name: "Done" } } });
+        }
+        await sendTelegramMessage(`✅ *${task.title}* — done!`, buildMainMenu());
+      } else if (action === "skip" && taskIdx !== -1) {
+        tasks[taskIdx].status = "skipped";
+        if (notion && task.notionPageId) {
+          await notionUpdatePage(notion.apiKey, task.notionPageId, { Status: { select: { name: "Skipped" } } });
+        }
+        await sendTelegramMessage(`⏭️ Skipped: *${task.title}*`, buildMainMenu());
+      } else if (action === "later" && taskIdx !== -1) {
+        tasks[taskIdx].status = "carried_over";
+        if (notion && task.notionPageId) {
+          await notionUpdatePage(notion.apiKey, task.notionPageId, { Status: { select: { name: "Carried Over" } } });
+        }
+        await sendTelegramMessage(`🔄 Carrying over: *${task.title}*`, buildMainMenu());
+      }
+    } else {
+      await sendTelegramMessage(`Task #${num + 1} not found. Type "view today's tasks" to see your list.`, buildMainMenu());
+    }
+    return;
+  }
+
+  if (lower.includes("daily report")) {
+    const msg = composeEODWrapup();
+    await sendTelegramMessage(msg || "📊 No tasks to report on today.", buildMainMenu());
+    return;
+  }
+
+  if (lower.includes("weekly summary")) {
+    const msg = composeWeeklyReview();
+    await sendTelegramMessage(msg || "📈 No tasks this week yet.", buildMainMenu());
+    return;
+  }
+
+  if (lower.includes("plan project")) {
+    await sendTelegramMessage("📝 To plan a project, use the web UI at your deployment URL.\n\nDescribe your project there and I'll create a structured weekly plan with resources!", buildMainMenu());
     return;
   }
 
